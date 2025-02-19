@@ -1,0 +1,19 @@
+embedding 128, dropout =0
+🎉 Training Complete! Best Model Found at Epoch 8
+[Valid]: Recall: 0.0542-0.0665-0.0985-0.1232 NDCG: 0.0258-0.0289-0.0353-0.0393
+[Test]: Recall: 0.0222-0.0419-0.0862-0.1502 NDCG: 0.0103-0.0152-0.0238-0.034 
+============================================================
+
+
+
+(myenv) ➜  code git:(main) ✗ 
+
+Purpose of the Gating Mechanism
+The gating mechanism in your ContentMF model is designed to control how much weight each feature type (item embedding, visual embedding, category embedding) contributes to the final representation.
+
+Why Do We Need It?
+Since your model is hybrid (using both collaborative filtering and content-based features), the gating mechanism acts as an adaptive feature selector, ensuring that:
+
+If the user history is strong, the model leans more on collaborative filtering (CF) (user-item embeddings).
+If the user has sparse history or the item is new, the model relies more on content-based features (visual and category embeddings).
+For cold-start scenarios (new items/users), content features must be utilized, otherwise, recommendations won’t work for unseen items.
