@@ -72,26 +72,15 @@ def evaluate(args, model, top_k, train_dict, gt_dict, valid_dict, item_num, flag
 
 
 def metrics(args, model, top_k, train_dict, gt_dict, valid_dict, item_num, flag, item_visual_map, item_category_map):
-    RECALL, NDCG = [], []
+    RECALL, NDCG, ILD, F1 = [], [], [], []
     recommends = evaluate(args, model, top_k, train_dict, gt_dict,
                           valid_dict, item_num, flag, item_visual_map, item_category_map)
-    # print ("asdd", train_dict.keys())
-    # print ("asdd", gt_dict.keys())
-    # print ("asdd", valid_dict.keys())
-    # print ("recommends",recommends[0][0])
-    # print (len(recommends))
-    # print (recommends[0])
-    # print ('----------------')
-    # print (recommends[1])
-    # print (recommends[2])
-    # print ('----------------')
 
-    # print (recommends[3])
-
-    # sys.exit(1)
     for idx in range(len(top_k)):
         sumForRecall, sumForNDCG, user_length = 0, 0, 0
         k = -1
+        per_user_recs = []
+
         for user_id in gt_dict.keys():
             k += 1
             if len(gt_dict[user_id]) != 0:
@@ -100,8 +89,10 @@ def metrics(args, model, top_k, train_dict, gt_dict, valid_dict, item_num, flag,
                 idcg = 0
                 idcgCount = len(gt_dict[user_id])
                 ndcg = 0
+                recs = recommends[idx][k]
+                per_user_recs.append(recs)
 
-                for index, thing in enumerate(recommends[idx][k]):
+                for index, thing in enumerate(recs):
                     if thing in gt_dict[user_id]:
                         userhit += 1
                         dcg += 1.0 / (np.log2(index + 2))
@@ -116,44 +107,55 @@ def metrics(args, model, top_k, train_dict, gt_dict, valid_dict, item_num, flag,
                 user_length += 1
 
         RECALL.append(round(sumForRecall / user_length, 4))
-        NDCG.append(round(sumForNDCG / user_length, 4))
+        NDCG_score = round(sumForNDCG / user_length, 4)
+        NDCG.append(NDCG_score)
 
-    return RECALL, NDCG
+        # Compute ILD and F1
+        ILD_score = compute_ILD(per_user_recs, item_category_map, K=10)
+        ILD.append(ILD_score)
+        F1_score = compute_F1(NDCG_score, ILD_score)
+        F1.append(F1_score)
 
-
-def compute_intra_list_diversity(model, test_gt, item_num, category_map, mu=0.9895952383, sigma=0.0050332415):
-    """ Computes Intra-List Diversity@10 (ILD@10). """
-    total_ild = 0
-    for user in test_gt.keys():
-        user_tensor = torch.tensor([user]).to(model.device)
-        item_tensors = torch.tensor(list(range(item_num))).to(model.device)
-
-        with torch.no_grad():
-            scores = model(user_tensor, item_tensors)
-
-        _, top_k_items = torch.topk(scores, k=10)
-        top_k_items = top_k_items.cpu().numpy()
-
-        ild = 0
-        K = len(top_k_items)
-        if K > 1:
-            for i in range(K):
-                for j in range(i + 1, K):
-                    if category_map[top_k_items[i]] != category_map[top_k_items[j]]:
-                        ild += 1
-            ild /= (K * (K - 1))
-
-        ild = F.sigmoid(torch.tensor((ild - mu) / sigma))  # Normalization
-        total_ild += ild
-
-    return total_ild / len(test_gt)
+    return RECALL, NDCG, ILD, F1
 
 
-def compute_f1_score(ndcg, ild):
-    """ Computes F1 score using NDCG and ILD. """
-    if ndcg + ild == 0:
-        return 0
-    return 2 * (ndcg * ild) / (ndcg + ild)
+def sigmoid(x, mu=0.9895952383, sigma=0.0050332415):
+    """ Sigmoid normalization for ILD. """
+    return 1 / (1 + np.exp(-(x - mu) / sigma))
+
+
+def compute_ILD(recommends, item_category_map, K=10):
+    """ Compute Intra-List-Diversity@10 (ILD) for each user. """
+    ILD_scores = []
+
+    for user_recs in recommends:
+        if len(user_recs) < 2:
+            ILD_scores.append(0.0)  # No diversity if only one or no items
+
+        diversity_sum = 0
+        count = 0
+
+        for i in range(min(K, len(user_recs))):
+            for j in range(i + 1, min(K, len(user_recs))):
+                if item_category_map.get(user_recs[i]) != item_category_map.get(user_recs[j]):
+                    diversity_sum += 1
+                count += 1
+
+        if count > 0:
+            ILD = (2 / (K * (K - 1))) * diversity_sum
+        else:
+            ILD = 0.0
+
+        ILD_scores.append(sigmoid(ILD))  # Normalize using sigmoid
+
+    return np.mean(ILD_scores)  # Average ILD across users
+
+
+def compute_F1(NDCG, ILD):
+    """ Compute F1 Score (NDCG-ILD) for the recommendation list. """
+    if NDCG + ILD == 0:
+        return 0.0  # Avoid division by zero
+    return (2 * NDCG * ILD) / (NDCG + ILD)
 
 
 def print_results(loss, valid_result, test_result):
@@ -161,10 +163,14 @@ def print_results(loss, valid_result, test_result):
     if loss is not None:
         print("[Train]: loss: {:.4f}".format(loss))
     if valid_result is not None:
-        print("[Valid]: Recall: {} NDCG: {}".format(
+        print("[Valid]: Recall: {} NDCG: {} ILD: {} F1: {}".format(
             '-'.join([str(x) for x in valid_result[0]]),
-            '-'.join([str(x) for x in valid_result[1]])))
+            '-'.join([str(x) for x in valid_result[1]]),
+            '-'.join([str(x) for x in valid_result[2]]),
+            '-'.join([str(x) for x in valid_result[3]])))
     if test_result is not None:
-        print("[Test]: Recall: {} NDCG: {} ".format(
+        print("[Test]: Recall: {} NDCG: {} ILD: {} F1: {}".format(
             '-'.join([str(x) for x in test_result[0]]),
-            '-'.join([str(x) for x in test_result[1]])))
+            '-'.join([str(x) for x in test_result[1]]),
+            '-'.join([str(x) for x in test_result[2]]),
+            '-'.join([str(x) for x in test_result[3]])))

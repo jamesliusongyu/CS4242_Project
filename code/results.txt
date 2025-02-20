@@ -17,3 +17,113 @@ Since your model is hybrid (using both collaborative filtering and content-based
 If the user history is strong, the model leans more on collaborative filtering (CF) (user-item embeddings).
 If the user has sparse history or the item is new, the model relies more on content-based features (visual and category embeddings).
 For cold-start scenarios (new items/users), content features must be utilized, otherwise, recommendations won’t work for unseen items.
+
+
+
+Why Do user_bias and item_bias Need Bias If They Are Also Embeddings?
+Great question! At first glance, user_emb and item_emb are already embeddings, so why do we need separate user_bias and item_bias embeddings?
+
+The short answer:
+✔ user_emb and item_emb capture latent feature interactions, while
+✔ user_bias and item_bias capture independent user/item-specific tendencies.
+
+🔹 Understanding the Role of Bias in Factorization Models
+Factorization-based models, like Matrix Factorization (MF) or Factorization Machines (FM), assume that an interaction between a user and an item can be broken down into:
+
+𝑦
+^
+(
+𝑢
+,
+𝑖
+)
+=
+𝑢
+𝑢
+⋅
+𝑣
+𝑖
+⏟
+Interaction (Latent Features)
++
+𝑏
+𝑢
++
+𝑏
+𝑖
+⏟
+Bias (Independent Effects)
+y
+^
+​
+ (u,i)= 
+Interaction (Latent Features)
+u 
+u
+​
+ ⋅v 
+i
+​
+ 
+​
+ 
+​
+ + 
+Bias (Independent Effects)
+b 
+u
+​
+ +b 
+i
+​
+ 
+​
+ 
+​
+ 
+Where:
+
+user_emb[u] and item_emb[i] (🔹 Latent Features) capture the interaction effects between users and items.
+user_bias[u] and item_bias[i] (⚡ Bias Terms) capture the general preference of the user and popularity of the item.
+📌 Why Do We Need user_bias and item_bias?
+1️⃣ Users May Have Personal Bias Toward High/Low Ratings
+
+Some users always give high ratings regardless of the item.
+Some users always give low ratings regardless of the item.
+user_bias accounts for this systematic deviation.
+🔹 Example:
+
+User A loves everything → Gives 5★ to everything.
+User B is very critical → Rarely gives 5★.
+If we don’t use user_bias, the model won't capture this preference.
+2️⃣ Items Have Popularity Bias
+
+Some items are naturally more popular and receive higher ratings regardless of the user.
+Some items are niche and get lower ratings even if they have high quality.
+item_bias captures this effect.
+🔹 Example:
+
+A popular movie (e.g., Avengers) will always receive high ratings.
+A niche movie (e.g., Indie Film) might have low ratings, even if some users love it.
+Without item_bias, the model fails to differentiate popularity from quality.
+🔹 Without user_bias and item_bias, What Happens?
+🚨 Problem: The model will only learn user-item interactions but not individual user or item effects.
+🚨 Consequence:
+
+A user who always gives high ratings (e.g., User A) will be predicted as interacting with every item positively, even for bad items.
+A highly popular item will get good recommendations even for users who wouldn’t like it.
+✅ With Bias Terms (b_u and b_i), the Model Learns Both Global and Individual Patterns!
+
+🔹 Summary
+Component	Purpose	Why It's Needed?
+user_emb & item_emb	Learn latent factors (preferences, features, interactions)	Captures user-item feature similarities (e.g., "User likes Sci-Fi, so recommend Star Wars").
+user_bias	Captures how lenient/strict a user is in ratings	Helps correct for users who always rate high or low.
+item_bias	Captures popularity effect	Adjusts for items that are universally liked or disliked.
+🔹 Final Answer
+📌 Even though user_emb and item_emb are embeddings, they only capture feature interactions!
+📌 user_bias and item_bias are needed to capture overall user and item preferences.
+📌 Without bias terms, the model assumes all users rate items similarly and all items have equal popularity— which is unrealistic.
+
+🚀 This is why collaborative filtering models like Matrix Factorization & Factorization Machines always include bias terms! 🔥
+
+Let me know if you want to dive deeper!
